@@ -1,0 +1,70 @@
+name: react-native-android-build-apk
+#on:
+#  # Trigger the workflow when repository_dispatch is invoked via lambda
+#  repository_dispatch:
+#   types: workflow-trigger
+#   branches:
+#     - master
+on:
+  # Trigger the workflow on push or pull request,
+  # but only for the master branch
+  push:
+    branches:
+      - master
+jobs:
+  build-ios:
+    runs-on: macos-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-west-1
+      - name: Checkout
+        uses: actions/checkout@v2
+        with:
+#          ref: ${{ github.event.client_payload.branch_name }}
+          ref: ozoz
+#      - name: Replace bin/config.js with API host
+#        env:
+#          API: ${{ github.event.client_payload.api_url }}
+#        run: |
+#          sed -i "s|appEnvironments\[appEnv\]|$API|g" bin/config.js
+#          sed -i "s|chatEnvironments\[appEnv\]|$API|g" bin/config.js
+#          cat bin/config.js
+#      - name: Set XCode Version
+#        run: sudo xcode-select -s /Applications/Xcode_11.app
+      - name: Install npm dependencies
+        run: |
+          npm install
+      - name: Install pod dependencies
+        run: |
+          cd ios && pod install
+      - name: Build IOS Release
+        run: |
+          xcodebuild -scheme myapp archive -archivePath myapp.xcarchive -allowProvisioningUpdates
+          xcodebuild -exportArchive -archivePath ./myapp.xcarchive -exportPath . -exportOptionsPlist myapp/Info.plist
+          mv myapp.ipa ../myapp.ipa
+      - name: Create Artifact
+        uses: actions/upload-artifact@v1
+        with:
+          name: myapp.ipa
+          path: ios/build/
+      - name: Deploy to S3
+        env:
+          SHA: ${{ github.sha }}
+#          S3Bucket: ${{ github.event.client_payload.bucket_name }}
+          S3Bucket: wawy-qa-mobile-artifacts
+        run: |
+          aws s3 cp ios/build/myapp.ipa s3://${S3Bucket}/ios/native-app-sp-${SHA:0:7}.ipa --acl public-read
+#      - name: Send success signal back to CF
+#        if: success()
+#        env:
+#          SHA: ${{ github.sha }}
+#        run: |
+#          curl -X PUT -H 'Content-Type:' --data-binary "{\"Status\" : \"SUCCESS\",\"Reason\" : \"artifact upload completeted succesfully\", \"UniqueId\": \"ArtifactName\", \"Data\": \"native-app-sp-${SHA:0:7}\"}" "${{ github.event.client_payload.cf_response_url }}"
+#      - name: Send failure signal back to CF
+#        if: failure()
+#        run: |
+#          curl -X PUT -H 'Content-Type:' --data-binary "{\"Status\" : \"FAILURE\",\"Reason\" : \"failed to create artifact, check Github action logs \", \"UniqueId\": \"ArtifactName\", \"Data\": \"\"}" "${{ github.event.client_payload.cf_response_url }}"
